@@ -86,11 +86,37 @@
   #codebar .hint { color: #8b97a6; font-size: 13px; }
   #codebar .spacer { flex: 1; }
   #codebar .caret { color: #8b97a6; }
-  #code {
-    flex: 1 1 auto; overflow: auto; margin: 0; padding: 0 14px 16px;
-    font: 12px/1.6 ui-monospace, Menlo, Consolas, monospace;
-    white-space: pre-wrap; tab-size: 4;
+  #codebar button {
+    font: 12px inherit; padding: 3px 10px; border-radius: 5px; cursor: pointer;
+    border: 1px solid #33404f; background: #1d2530; color: #cbd5e1;
   }
+  #codebar button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  #codebar .dirty { color: #fbbf24; font-size: 12px; }
+  #codebar .dirty[hidden] { display: none; }
+
+  /* Editor and highlighter are two layers in the same box: a transparent
+     <textarea> on top of a coloured <pre>. The textarea keeps every native
+     behaviour -- caret, selection, undo, IME -- and the <pre> underneath
+     supplies the colour. No editor library, and so no second CDN to trust. */
+  #editwrap { flex: 1 1 auto; position: relative; overflow: auto; }
+  #hl, #editor {
+    margin: 0; padding: 0 14px 16px;
+    font: 12px/1.6 ui-monospace, Menlo, Consolas, monospace;
+    white-space: pre-wrap; word-break: break-word; tab-size: 4;
+    border: 0; letter-spacing: normal;
+  }
+  #hl { pointer-events: none; min-height: 100%; }
+  #editor {
+    position: absolute; top: 0; left: 0; width: 100%;
+    background: transparent; color: transparent; caret-color: #fff;
+    resize: none; outline: none; overflow: hidden;
+  }
+  #editor::selection { background: #2f4f7a; }
+  .t-kw  { color: #c792ea; }
+  .t-str { color: #c3e88d; }
+  .t-com { color: #6b7d91; font-style: italic; }
+  .t-num { color: #f78c6c; }
+  .t-def { color: #82aaff; }
 </style>
 
 <header>
@@ -149,9 +175,16 @@
       <span class="caret" id="caret">▸</span>
       <span class="label">&lt;/&gt; Show the server code</span>
       <span class="hint" id="codehint">sign.py — the file the worker is running</span>
+      <span class="dirty" id="dirty" hidden>● edited</span>
       <span class="spacer"></span>
+      <button id="reset">Reset</button>
+      <button id="rerun" class="primary">Apply &amp; re-sign</button>
     </div>
-    <pre id="code">loading…</pre>
+    <div id="editwrap">
+      <pre id="hl"><code>loading…</code></pre>
+      <textarea id="editor" spellcheck="false" autocomplete="off"
+                autocapitalize="off" autocorrect="off"></textarea>
+    </div>
   </section>
 </main>
 
@@ -221,6 +254,7 @@
     log('<b>[page]</b> POST → worker (this request never leaves the tab)');
     worker.postMessage({
       id: Date.now(),
+      source: $('editor').value || null,
       args: {
         host,
         secret,
@@ -235,13 +269,82 @@
     $(id).addEventListener('keydown', (e) => { if (e.key === 'Enter') submit(); });
   }
 
-  // ---- code pane ---------------------------------------------------------
-  // Fetched, not pasted: the same bytes the worker imported.
-  fetch('sign.py').then((r) => r.text())
-    .then((t) => { $('code').textContent = t; })
-    .catch(() => { $('code').textContent = 'could not load sign.py'; });
+  // ---- code pane: a real editor ------------------------------------------
+  // Fetched, not pasted: the same bytes the worker imported. Edit it and the
+  // worker re-imports your version -- this is the actual signing code, not a
+  // sample of it, so breaking the field order here really does break Looker.
+  let pristine = '';
 
-  $('codebar').addEventListener('click', () => {
+  const KEYWORDS = ['def','class','return','import','from','as','if','elif',
+    'else','for','while','in','not','and','or','is','None','True','False',
+    'try','except','finally','raise','with','lambda','pass','yield','global',
+    'nonlocal','assert','del','break','continue'];
+
+  // One pass, alternation ordered longest-first, so a keyword inside a string
+  // or a comment is never re-matched. That ordering is the whole trick.
+  const TOKENS = new RegExp([
+    '"""[\\s\\S]*?"""',
+    "'''[\\s\\S]*?'''",
+    '"(?:\\\\.|[^"\\\\])*"',
+    "'(?:\\\\.|[^'\\\\])*'",
+    '#[^\\n]*',
+    '\\b(?:' + KEYWORDS.join('|') + ')\\b',
+    '\\b\\d+(?:\\.\\d+)?\\b',
+  ].join('|'), 'g');
+
+  function highlight(src) {
+    let out = '';
+    let last = 0;
+    for (const m of src.matchAll(TOKENS)) {
+      out += esc(src.slice(last, m.index));
+      const tok = m[0];
+      const cls = tok[0] === '#' ? 't-com'
+        : (tok[0] === '"' || tok[0] === "'") ? 't-str'
+        : /^\d/.test(tok) ? 't-num'
+        : (tok === 'def' || tok === 'class') ? 't-def'
+        : 't-kw';
+      out += `<span class="${cls}">${esc(tok)}</span>`;
+      last = m.index + tok.length;
+    }
+    return out + esc(src.slice(last));
+  }
+
+  function render() {
+    const src = $('editor').value;
+    // Trailing newline keeps the <pre> a line taller than the caret, so the
+    // last line is never clipped as you type at the bottom.
+    $('hl').firstChild.innerHTML = highlight(src) + '\n';
+    $('editor').style.height = $('hl').scrollHeight + 'px';
+    $('dirty').hidden = src === pristine;
+  }
+
+  fetch('sign.py').then((r) => r.text()).then((t) => {
+    pristine = t;
+    $('editor').value = t;
+    render();
+  }).catch(() => { $('hl').firstChild.textContent = 'could not load sign.py'; });
+
+  $('editor').addEventListener('input', render);
+  $('editor').addEventListener('keydown', (e) => {
+    // Tab indents rather than leaving the field. In a Python editor that is
+    // not a nicety.
+    if (e.key !== 'Tab') return;
+    e.preventDefault();
+    const el = e.target, a = el.selectionStart, b = el.selectionEnd;
+    el.value = el.value.slice(0, a) + '    ' + el.value.slice(b);
+    el.selectionStart = el.selectionEnd = a + 4;
+    render();
+  });
+
+  $('reset').addEventListener('click', (e) => {
+    e.stopPropagation();
+    $('editor').value = pristine;
+    render();
+  });
+  $('rerun').addEventListener('click', (e) => { e.stopPropagation(); submit(); });
+
+  $('codebar').addEventListener('click', (e) => {
+    if (e.target.tagName === 'BUTTON') return;
     const open = $('codepane').classList.toggle('open');
     $('caret').textContent = open ? '▾' : '▸';
   });

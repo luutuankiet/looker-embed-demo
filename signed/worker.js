@@ -32,9 +32,19 @@ const booted = boot().catch((e) => {
   throw e;
 });
 
-onmessage = async ({ data: { id, args } }) => {
+onmessage = async ({ data: { id, args, source } }) => {
   try {
     await booted;
+
+    // The editor sends the current buffer with every request. Rewriting the
+    // file and re-importing is the whole "your edit is live" mechanism --
+    // there is no build step to run, because Python does not have one.
+    if (source != null) {
+      pyodide.FS.writeFile('/sign.py', source);
+      pyodide.runPython('import importlib\nimportlib.reload(sign)');
+      say('reload', 'your edited sign.py re-imported');
+    }
+
     say('signing', 'HMAC-SHA1 over the ordered fields…');
 
     // Cross the boundary as JSON in both directions. Same shape as a real
