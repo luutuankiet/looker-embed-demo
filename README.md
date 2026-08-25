@@ -1,39 +1,55 @@
-# Looker private embed — a live, retargetable demo
+# Looker embedding — live, retargetable demos
 
-Two files, no build step, no server, no secret.
+One static site, one path per embedding mode. No build step, no package
+manager, and no server anywhere.
 
-- **`embed.html`** — the exhibit. A single HTML file that renders a Looker
-  dashboard using one `<script>` tag from a CDN. Save it, open it locally,
-  change two values: it works.
-- **`index.html`** — a shell around it. A form that points the exhibit at *your*
-  instance, and a code pane that `fetch`es `embed.html` at runtime so what you
-  read is exactly what just ran.
+| path | mode | what it needs |
+|---|---|---|
+| [`private/`](private/) | private embed | a Looker login you already have |
+| [`signed/`](signed/) | signed embed | your instance's embed secret |
 
-Live at **https://luutuankiet.github.io/looker-embed-demo/**
+Live at **https://luutuankiet.github.io/looker-embed-demo/** (the root
+redirects to `private/`, carrying any query string with it).
 
-## Why this mode needs nothing
+## private/ — borrowing a login
 
-Private embed authenticates with the reader's *own* Looker session cookie,
-issued by Looker to Looker. This page never sees it, stores it or transmits it.
-The only two values here are a hostname and a dashboard ID, both already visible
-in the URL bar of anyone using that instance — so there is nothing to keep
-secret and nothing to sign, which is why the whole thing fits in a static file.
+`embed.html` is the exhibit: a single file that renders a Looker dashboard from
+one `<script>` tag on a CDN. Save it, open it locally, change two values, done.
+`index.html` wraps it in a form and a code pane that `fetch`es `embed.html` at
+runtime, so what you read is exactly what just ran.
 
-Signed embedding is the opposite: it manufactures a login instead of borrowing
-one, and manufacturing it requires an HMAC over the embed URL with a shared
-secret. That secret cannot live in a page the reader can view-source. Private
-embed is free because it borrows someone else's login; signed embed costs a
-server because it makes one.
+It authenticates with your *own* Looker session cookie, issued by Looker to
+Looker. The page never sees it, stores it or transmits it. The only two values
+involved are a hostname and a dashboard ID, both already visible in the URL bar
+of anyone using that instance — nothing to keep secret, nothing to sign.
 
-## If the frame comes up blank
+**The Embedded Domain Allowlist is not consulted for this mode.** Verified
+against a live instance: these pages render a private embed from an origin that
+is not on that instance's list. That is a genuine surprise, and it is why the
+allowlist advice lives on the signed page rather than this one.
 
-Looker sends `Content-Security-Policy: frame-ancestors`, built from the
-**Embedded Domain Allowlist** (Admin → Platform → Embed). Browsers check that
-header against the *entire* ancestor chain, not just the immediate parent — so
-embedding this page inside another page needs **both** origins allowlisted:
+## signed/ — manufacturing one
 
-- `https://luutuankiet.github.io` — the page holding the Looker iframe
-- the origin of whatever holds *this* page (a Confluence site, say)
+Signed embed mints a session instead of borrowing one, by HMAC-ing an ordered
+list of fields with a shared secret. Anyone holding that secret can mint a URL
+as any user with any permission, which is normally the end of the story for a
+static site.
 
-You also need a live session on the instance in the box, and third-party cookies
-have to reach Looker — use Chrome or Firefox.
+So the signing runs in **Python, in a Web Worker, in your own browser**:
+
+- `sign.py` — the server half. Nothing in it knows it is in a browser. Paste it
+  into Flask and read the secret from the environment instead of a form field;
+  it behaves identically.
+- `worker.js` — boots Pyodide, imports `sign.py`, answers messages.
+- `index.html` — the form, the frame, and a log showing every step including
+  the exact bytes that were HMAC'd.
+
+Your secret is typed into a page you loaded from a CDN and handed to a worker on
+that same page. It is not transmitted, because there is nothing to transmit it
+to. Check that in the network tab — that is the standard everything here is held
+to. Even so: use a secret you are willing to rotate.
+
+Signed embed **is** checked against the Embedded Domain Allowlist, and browsers
+check `Content-Security-Policy: frame-ancestors` against the entire ancestor
+chain. Embedding one of these pages inside another page needs both origins
+listed.

@@ -1,0 +1,249 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Looker signed embed — live demo</title>
+
+<style>
+  :root { --ink:#111418; --line:#d8dbe0; --bg:#f6f7f9; --accent:#3b6fd4; --bar-h:46px; }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    font: 14px/1.5 -apple-system, system-ui, "Segoe UI", sans-serif;
+    color: var(--ink); background: var(--bg);
+    display: flex; flex-direction: column; overflow: hidden;
+  }
+  header {
+    flex: 0 0 auto; display: flex; align-items: center; gap: 8px;
+    padding: 0 12px; height: var(--bar-h);
+    background: #fff; border-bottom: 1px solid var(--line);
+  }
+  nav { display: flex; gap: 2px; margin-right: 8px; }
+  nav a {
+    font-size: 13px; text-decoration: none; color: #6b7280;
+    padding: 4px 8px; border-radius: 5px; white-space: nowrap;
+  }
+  nav a[aria-current] { background: #eef3fd; color: var(--accent); font-weight: 600; }
+  header input {
+    font: inherit; padding: 5px 8px; border: 1px solid var(--line);
+    border-radius: 5px; background: #fff; min-width: 0;
+  }
+  #host { flex: 0 1 250px; } #dashboard { flex: 0 0 80px; }
+  #model { flex: 0 1 150px; } #secret { flex: 1 1 160px; }
+  header button {
+    font: inherit; padding: 5px 12px; border: 1px solid transparent;
+    border-radius: 5px; background: var(--accent); color: #fff; cursor: pointer;
+  }
+  header button:disabled { background: #b7c3d9; cursor: default; }
+
+  main { position: relative; flex: 1 1 auto; min-height: 0; background: #fff; }
+  #stage { width: 100%; height: 100%; border: 0; display: block; }
+  #stage[hidden] { display: none; }
+
+  .empty {
+    position: absolute; inset: 0; display: grid; place-items: center;
+    padding: 24px 24px calc(var(--bar-h) + 24px); text-align: center; background: var(--bg);
+    overflow: auto;
+  }
+  .empty[hidden] { display: none; }
+  .empty .card { max-width: 620px; text-align: left; }
+  .empty h1 { font-size: 20px; margin: 0 0 10px; }
+  .empty p { margin: 0 0 10px; color: #4b5563; }
+  .empty code, .empty kbd {
+    font: 12px ui-monospace, Menlo, monospace;
+    background: #eceff3; padding: 1px 5px; border-radius: 4px;
+  }
+  .warn {
+    background: #fff4f4; border: 1px solid #e9c2c2; border-radius: 6px;
+    padding: 10px 12px; margin: 14px 0; color: #7a3a3a;
+  }
+
+  /* ---- the server log: the whole point of the page ---- */
+  #log {
+    position: absolute; left: 10px; bottom: calc(var(--bar-h) + 10px); z-index: 3;
+    width: min(440px, calc(100% - 20px)); max-height: 42%; overflow: auto;
+    background: #12161c; color: #cbd5e1; border-radius: 6px;
+    padding: 10px 12px; font: 12px/1.55 ui-monospace, Menlo, monospace;
+    box-shadow: 0 6px 24px rgba(0,0,0,.25); white-space: pre-wrap; word-break: break-word;
+  }
+  #log[hidden] { display: none; }
+  #log b { color: #9ecbff; font-weight: 600; }
+  #log .ok { color: #86efac; } #log .bad { color: #fca5a5; }
+
+  #codepane {
+    position: fixed; left: 0; right: 0; bottom: 0; z-index: 4;
+    display: flex; flex-direction: column;
+    height: var(--bar-h); max-height: 100%;
+    background: #12161c; color: #d7dde5; border-top: 1px solid #000;
+    transition: height .18s ease;
+  }
+  #codepane.open { height: 62dvh; }
+  #codebar {
+    flex: 0 0 var(--bar-h); display: flex; align-items: center; gap: 12px;
+    padding: 0 12px; cursor: pointer; user-select: none;
+  }
+  #codebar .label { font-weight: 600; }
+  #codebar .hint { color: #8b97a6; font-size: 13px; }
+  #codebar .spacer { flex: 1; }
+  #codebar .caret { color: #8b97a6; }
+  #code {
+    flex: 1 1 auto; overflow: auto; margin: 0; padding: 0 14px 16px;
+    font: 12px/1.6 ui-monospace, Menlo, Consolas, monospace;
+    white-space: pre-wrap; tab-size: 4;
+  }
+</style>
+
+<header>
+  <nav>
+    <a href="../private/">private</a>
+    <a href="./" aria-current="page">signed</a>
+  </nav>
+  <input id="host" placeholder="your-instance.cloud.looker.com" spellcheck="false" autocomplete="off">
+  <input id="dashboard" placeholder="dash id" spellcheck="false" autocomplete="off">
+  <input id="model" placeholder="model name" spellcheck="false" autocomplete="off">
+  <input id="secret" type="password" placeholder="embed secret" autocomplete="off">
+  <button id="sign" disabled>Sign &amp; load</button>
+</header>
+
+<main>
+  <iframe id="stage" hidden title="Looker signed embed"></iframe>
+
+  <div class="empty" id="empty">
+    <div class="card">
+      <h1>Sign an embed URL, in your own browser.</h1>
+      <p>
+        Private embed borrows a login you already have. Signed embed
+        <em>manufactures</em> one — and manufacturing it needs your instance's
+        <b>embed secret</b>, which is why this mode normally costs you a server.
+      </p>
+      <p>
+        There is no server here. The signing runs in Python, in a background
+        thread of this tab. Watch the log: your secret goes into a worker on
+        this page and never leaves it. Confirm that in the network tab.
+      </p>
+      <div class="warn">
+        <b>Use a throwaway or rotatable secret.</b> Anyone holding an embed
+        secret can mint a URL as any user with any permission. This page is the
+        safest possible place to paste one — it is your own browser — but the
+        habit is worth keeping.
+      </div>
+      <p>
+        You need <kbd>Admin → Platform → Embed</kbd>: an embed secret, and
+        <b>SSO embedding enabled</b>. The <b>model name</b> is the LookML model
+        the dashboard reads from; the signed user gets access to that model and
+        nothing else.
+      </p>
+      <p>
+        Then add <code id="thisorigin">this origin</code> to the
+        <b>Embedded Domain Allowlist</b>. Unlike private embed, signed embed
+        <em>is</em> checked against it — and the browser checks the whole
+        ancestor chain, so a page holding <em>this</em> page needs listing too.
+      </p>
+    </div>
+  </div>
+
+  <div id="log" hidden></div>
+
+  <section id="codepane">
+    <div id="codebar">
+      <span class="caret" id="caret">▸</span>
+      <span class="label">&lt;/&gt; Show the server code</span>
+      <span class="hint" id="codehint">sign.py — the file the worker is running</span>
+      <span class="spacer"></span>
+    </div>
+    <pre id="code">loading…</pre>
+  </section>
+</main>
+
+<script>
+  const $ = (id) => document.getElementById(id);
+  $('thisorigin').textContent = location.origin;
+
+  // Carry host and dashboard across from the private page if they came in on
+  // the query string. The secret never rides in a URL -- that is the one value
+  // a bookmark must not capture.
+  const params = new URLSearchParams(location.search);
+  $('host').value = params.get('host') || '';
+  $('dashboard').value = params.get('dashboard') || '';
+  $('model').value = params.get('model') || '';
+
+  // ---- the log -----------------------------------------------------------
+  const log = (html, cls) => {
+    $('log').hidden = false;
+    $('log').insertAdjacentHTML('beforeend',
+      `<div${cls ? ` class="${cls}"` : ''}>${html}</div>`);
+    $('log').scrollTop = $('log').scrollHeight;
+  };
+  const esc = (s) => String(s).replace(/[&<>]/g,
+    (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
+
+  // ---- the worker --------------------------------------------------------
+  const worker = new Worker('worker.js');
+  let ready = false;
+
+  worker.onmessage = ({ data }) => {
+    if (data.type === 'status') {
+      if (data.stage === 'ready') {
+        ready = true;
+        $('sign').disabled = false;
+      }
+      log(`<b>[worker]</b> ${esc(data.detail)}`, data.stage === 'ready' ? 'ok' : '');
+      return;
+    }
+    if (data.type === 'signed') {
+      // Show the exact bytes that were HMAC'd. This is the field order the
+      // whole contract turns on, and it is invisible in the finished URL.
+      log('<b>[worker]</b> string_to_sign, one field per line:', 'ok');
+      log(esc(data.string_to_sign));
+      log(`<b>[worker]</b> signature: ${esc(data.signature)}`, 'ok');
+      log('<b>[page]</b> navigating the frame to the signed URL…');
+      $('empty').hidden = true;
+      $('stage').hidden = false;
+      $('stage').src = data.url;
+      return;
+    }
+    log(`<b>[worker]</b> ${esc(data.error)}`, 'bad');
+  };
+
+  // ---- the form ----------------------------------------------------------
+  function submit() {
+    if (!ready) return;
+    const host = $('host').value.trim()
+      .replace(/^https?:\/\//, '').replace(/\/.*$/, '');
+    const dashboard = $('dashboard').value.trim();
+    const model = $('model').value.trim();
+    const secret = $('secret').value;
+    if (!host || !dashboard || !model || !secret) {
+      log('<b>[page]</b> host, dashboard, model and secret are all required.', 'bad');
+      return;
+    }
+    $('log').innerHTML = '';
+    log('<b>[page]</b> POST → worker (this request never leaves the tab)');
+    worker.postMessage({
+      id: Date.now(),
+      args: {
+        host,
+        secret,
+        target: '/embed/dashboards/' + dashboard,
+        models: [model],
+        external_user_id: 'demo-reader-' + Math.floor(Math.random() * 1e6),
+      },
+    });
+  }
+  $('sign').addEventListener('click', submit);
+  for (const id of ['host', 'dashboard', 'model', 'secret']) {
+    $(id).addEventListener('keydown', (e) => { if (e.key === 'Enter') submit(); });
+  }
+
+  // ---- code pane ---------------------------------------------------------
+  // Fetched, not pasted: the same bytes the worker imported.
+  fetch('sign.py').then((r) => r.text())
+    .then((t) => { $('code').textContent = t; })
+    .catch(() => { $('code').textContent = 'could not load sign.py'; });
+
+  $('codebar').addEventListener('click', () => {
+    const open = $('codepane').classList.toggle('open');
+    $('caret').textContent = open ? '▾' : '▸';
+  });
+</script>
+</html>
