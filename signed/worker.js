@@ -21,7 +21,9 @@ async function boot() {
   // hmac and hashlib are standard library, already inside the runtime. There
   // is nothing to pip install, which is most of the reason Python is here.
   say('boot', 'loading sign.py…');
-  pyodide.FS.writeFile('/sign.py', await (await fetch('sign.py')).text());
+  // Carry the page's version through, so sign.py cannot go stale either.
+  const v = new URL(self.location.href).search;
+  pyodide.FS.writeFile('/sign.py', await (await fetch('sign.py' + v)).text());
   pyodide.runPython('import sys\nsys.path.insert(0, "/")\nimport json, sign');
 
   say('ready', `Python is running in your browser (${Math.round(performance.now() - t0)} ms).`);

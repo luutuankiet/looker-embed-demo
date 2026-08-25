@@ -211,7 +211,12 @@
     (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
 
   // ---- the worker --------------------------------------------------------
-  const worker = new Worker('worker.js');
+  // Bump this when worker.js or sign.py changes. GitHub Pages serves
+  // max-age=600 and a Worker URL does not inherit the page's query string, so
+  // without a version here a returning reader silently runs the old worker
+  // against the new page for ten minutes.
+  const VERSION = '2';
+  const worker = new Worker('worker.js?v=' + VERSION);
   let ready = false;
 
   worker.onmessage = ({ data }) => {
@@ -318,7 +323,7 @@
     $('dirty').hidden = src === pristine;
   }
 
-  fetch('sign.py').then((r) => r.text()).then((t) => {
+  fetch('sign.py?v=' + VERSION).then((r) => r.text()).then((t) => {
     pristine = t;
     $('editor').value = t;
     render();
