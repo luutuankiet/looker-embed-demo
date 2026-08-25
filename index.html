@@ -32,7 +32,7 @@
     font: inherit; padding: 5px 8px; border: 1px solid var(--line);
     border-radius: 5px; background: #fff; min-width: 0;
   }
-  #host { flex: 1 1 260px; }
+  #host { flex: 0 1 320px; }
   #dashboard { flex: 0 0 90px; }
   header button {
     font: inherit; padding: 5px 12px; border: 1px solid transparent;
@@ -50,6 +50,7 @@
     position: absolute; inset: 0; display: grid; place-items: center;
     padding: 24px; text-align: center; background: var(--bg);
   }
+  .empty[hidden] { display: none; }   /* [hidden] loses to display:grid — say it explicitly */
   .empty .card { max-width: 520px; }
   .empty h1 { font-size: 20px; margin: 0 0 10px; }
   .empty p { margin: 0 0 10px; color: #4b5563; }
