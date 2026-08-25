@@ -72,14 +72,17 @@
   .notice .close { float: right; cursor: pointer; color: #8a7a3a; }
 
   /* ---- code pane: a slim bar that overlays the stage, and grows ---- */
+  /* Fixed, not absolute: a percentage height here would have to resolve against
+     a flex item whose height is not specified, and the browser quietly treats
+     that as auto — the pane opens in the DOM and stays 46px on screen. */
   #codepane {
-    position: absolute; left: 0; right: 0; bottom: 0; z-index: 4;
+    position: fixed; left: 0; right: 0; bottom: 0; z-index: 4;
     display: flex; flex-direction: column;
     height: var(--bar-h); max-height: 100%;
     background: #12161c; color: #d7dde5;
     border-top: 1px solid #000; transition: height .18s ease;
   }
-  #codepane.open { height: 68%; }
+  #codepane.open { height: 62dvh; }
   #codebar {
     flex: 0 0 var(--bar-h); display: flex; align-items: center; gap: 12px;
     padding: 0 12px; cursor: pointer; user-select: none;
